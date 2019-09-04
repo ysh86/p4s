@@ -78,6 +78,7 @@ func main() {
 	xor8Offset := uint64(4*12 + 2)
 	orgSizeOffset := uint64(4 * 1)
 	sizeOffset := uint64(4 * 13)
+	crc16Offset := uint64(4 * 2)
 
 	fsrc, err := os.Open(os.Args[1])
 	if err != nil {
@@ -99,6 +100,7 @@ func main() {
 	headerSize := uint64(4 * 15)
 	orgSize := uint64(0)
 	payloadSize := uint64(0)
+	crc16 := uint16(0)
 OuterLoop:
 	for i := 0; i < w*h/5/4; i++ {
 		_, err := fsrc.Read(b[:])
@@ -125,13 +127,16 @@ OuterLoop:
 		for j := 0; j < 7; j++ {
 			bits8 := bits64 & 0xff
 			if orgSizeOffset <= n && n < orgSizeOffset+4 {
-				orgSize |= bits8 << uint((n-orgSizeOffset)*8)
+				orgSize |= bits8 << ((n - orgSizeOffset) * 8)
+			}
+			if crc16Offset <= n && n < crc16Offset+2 {
+				crc16 |= uint16(bits8 << ((n - crc16Offset) * 8))
 			}
 			if n == xor8Offset {
 				xor8 = bits8
 			}
 			if sizeOffset <= n && n < sizeOffset+4 {
-				payloadSize |= bits8 << uint((n-sizeOffset)*8)
+				payloadSize |= bits8 << ((n - sizeOffset) * 8)
 			}
 			if n >= headerSize {
 				bits8 ^= xor8
@@ -161,7 +166,10 @@ OuterLoop:
 	}
 	defer fdec.Close()
 
-	fenc.Seek(int64(headerSize), io.SeekStart)
+	_, err = fenc.Seek(int64(headerSize), io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
 	bitreader, err := newLbits(fenc)
 	if err != nil {
 		panic(err)
@@ -239,5 +247,37 @@ OuterLoop:
 
 	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", orgSize, decodedSize)
 
-	// TODO: CRC16
+	// CRC16
+	err = fdec.Sync()
+	if err != nil {
+		panic(err)
+	}
+	_, err = fdec.Seek(0, io.SeekStart)
+	if err != nil {
+		panic(err)
+	}
+
+	crc16decoded := uint16(0xffff)
+	for {
+		b := [1]byte{}
+		_, err = fdec.Read(b[:])
+		if err != nil {
+			break
+		}
+
+		// calc
+		b8 := uint16(b[0])
+		temp := (crc16decoded ^ b8) & 0xff
+		for i := 0; i < 8; i++ {
+			if temp&1 == 1 {
+				temp = 0xc7ed ^ (temp >> 1)
+			} else {
+				temp >>= 1
+			}
+		}
+		crc16decoded = temp ^ (crc16decoded >> 8)
+	}
+	crc16decoded ^= 0xffff
+
+	fmt.Fprintf(os.Stderr, "done crc16: org=%04x, decoded=%04x\n", crc16, crc16decoded)
 }
