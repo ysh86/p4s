@@ -8,6 +8,51 @@ import (
 	"github.com/icza/bitio"
 )
 
+type lbits struct {
+	file      io.Reader
+	bits64    uint64
+	bits64Len uint
+}
+
+func newLbits(file io.Reader) (*lbits, error) {
+	return &lbits{file, 0, 0}, nil
+}
+
+func (l *lbits) fill() error {
+	for l.bits64Len <= 56 {
+		bits8 := [1]byte{}
+		_, err := l.file.Read(bits8[:])
+		if err != nil {
+			return err
+		}
+
+		l.bits64 |= uint64(bits8[0]) << l.bits64Len
+		l.bits64Len += 8
+	}
+
+	return nil
+}
+
+func (l *lbits) read(bits uint) (uint64, error) {
+	err := l.fill()
+	if err != io.EOF && err != nil {
+		return 0, err
+	}
+
+	if l.bits64Len == 0 {
+		return 0, io.EOF
+	}
+	if l.bits64Len < bits || 64 < bits {
+		return 0, fmt.Errorf("too long")
+	}
+
+	ret := l.bits64 & ((1 << bits) - 1)
+	l.bits64 >>= bits
+	l.bits64Len -= bits
+
+	return ret, nil
+}
+
 func level7(pix uint8) uint64 {
 	switch {
 	case 0 <= pix && pix < 22:
@@ -48,6 +93,7 @@ func main() {
 	}
 	defer fenc.Close()
 
+	// read bits from Y plane
 	// 14[bits] * 4 = 56[bits] => 7[bytes]
 	b := [5 * 4]byte{}
 	writer := bitio.NewWriter(fenc)
@@ -115,13 +161,55 @@ OuterLoop:
 	}
 	defer fdec.Close()
 
-	fenc.Seek(int64(headerSize), os.SEEK_SET)
+	fenc.Seek(int64(headerSize), io.SeekStart)
+	bitreader, err := newLbits(fenc)
+	if err != nil {
+		panic(err)
+	}
+
+	// decode lzss
+	bufSizeBits := uint(10)
+	//bufSize := (1 << bufSizeBits)
+	//bufSizeMask := bufSize - 1
+	lengthBits := uint(5)
+	//minLength := 3
+	//maxLength := (1 << lengthBits)
+
 	decodedSize := uint64(0)
-	/*
-		for {
-			// TODO: ここで payloadSize 分を読んで lzss 展開する
+	for decodedSize < orgSize {
+		// flag
+		flag, err := bitreader.read(1)
+		if err != nil {
+			panic(err)
 		}
-	*/
+
+		if flag == 0 {
+			// 8bit data
+			bits8, err := bitreader.read(8)
+			if err != nil {
+				panic(err)
+			}
+
+			fmt.Fprintf(fdec, "0: %c (%02x)\n", bits8, bits8)
+			decodedSize++
+		} else {
+			// encoded data
+			idx, err := bitreader.read(bufSizeBits)
+			if err != nil {
+				panic(err)
+			}
+			len, err := bitreader.read(lengthBits)
+			if err != nil {
+				panic(err)
+			}
+			len++
+
+			fmt.Fprintf(fdec, "1: idx=%d, len=%d\n", idx, len)
+			decodedSize += len
+		}
+	}
 
 	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", orgSize, decodedSize)
+
+	// TODO: CRC16
 }
