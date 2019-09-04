@@ -1,3 +1,11 @@
+// ------------------------------------------------
+// Usage:
+// $ go run main.go data/lzss_720x1280_30fps.yuv data/dst.lzss data/dst_utf16le.txt
+// $ iconv -f UTF-16LE data/dst_utf16le.txt > data/dst_utf8.txt
+// or
+// add BOM UTF-16 LE: 0xFF, 0xFE
+// ------------------------------------------------
+
 package main
 
 import (
