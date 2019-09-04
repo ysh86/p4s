@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/icza/bitio"
 )
 
 type lbits struct {
@@ -96,7 +94,6 @@ func main() {
 	// read bits from Y plane
 	// 14[bits] * 4 = 56[bits] => 7[bytes]
 	b := [5 * 4]byte{}
-	writer := bitio.NewWriter(fenc)
 	n := uint64(0)
 	xor8 := uint64(0)
 	headerSize := uint64(4 * 15)
@@ -139,7 +136,7 @@ OuterLoop:
 			if n >= headerSize {
 				bits8 ^= xor8
 			}
-			err := writer.WriteBits(bits8, 8)
+			_, err := fenc.Write([]byte{byte(bits8)})
 			if err != nil {
 				panic(err)
 			}
@@ -151,7 +148,10 @@ OuterLoop:
 			}
 		}
 	}
-	writer.Close()
+	err = fenc.Sync()
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Fprintf(os.Stderr, "done read: header=%d, payload=%d, total=%d\n", headerSize, payloadSize, n)
 
