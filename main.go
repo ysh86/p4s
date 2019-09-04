@@ -32,8 +32,9 @@ func level7(pix uint8) uint64 {
 func main() {
 	w := 720
 	h := 720
-	xor8Offset := 4*12 + 2
-	headerSize := 4 * 15
+	xor8Offset := uint64(4*12 + 2)
+	orgSizeOffset := uint64(4 * 1)
+	sizeOffset := uint64(4 * 13)
 
 	fsrc, err := os.Open(os.Args[1])
 	if err != nil {
@@ -50,8 +51,12 @@ func main() {
 	// 14[bits] * 4 = 56[bits] => 7[bytes]
 	b := [5 * 4]byte{}
 	writer := bitio.NewWriter(fenc)
-	n := 0
-	var xor8 uint64
+	n := uint64(0)
+	xor8 := uint64(0)
+	headerSize := uint64(4 * 15)
+	orgSize := uint64(0)
+	payloadSize := uint64(0)
+OuterLoop:
 	for i := 0; i < w*h/5/4; i++ {
 		_, err := fsrc.Read(b[:])
 		if err == io.EOF {
@@ -73,11 +78,17 @@ func main() {
 			bits64 |= bits14 << (14 * j)
 		}
 
-		// decrypt & dump
+		// parse header, decrypt payload & dump
 		for j := 0; j < 7; j++ {
 			bits8 := bits64 & 0xff
+			if orgSizeOffset <= n && n < orgSizeOffset+4 {
+				orgSize |= bits8 << uint((n-orgSizeOffset)*8)
+			}
 			if n == xor8Offset {
 				xor8 = bits8
+			}
+			if sizeOffset <= n && n < sizeOffset+4 {
+				payloadSize |= bits8 << uint((n-sizeOffset)*8)
 			}
 			if n >= headerSize {
 				bits8 ^= xor8
@@ -88,12 +99,29 @@ func main() {
 			}
 			bits64 >>= 8
 			n++
+
+			if n >= headerSize+payloadSize {
+				break OuterLoop
+			}
 		}
 	}
 	writer.Close()
 
-	//fenc.Seek(0, os.SEEK_SET)
-	//reader := bitio.NewReader(fsrc)
+	fmt.Fprintf(os.Stderr, "done read: header=%d, payload=%d, total=%d\n", headerSize, payloadSize, n)
 
-	fmt.Println("done")
+	fdec, err := os.Create(os.Args[3])
+	if err != nil {
+		panic(err)
+	}
+	defer fdec.Close()
+
+	fenc.Seek(int64(headerSize), os.SEEK_SET)
+	decodedSize := uint64(0)
+	/*
+		for {
+			// TODO: ここで payloadSize 分を読んで lzss 展開する
+		}
+	*/
+
+	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", orgSize, decodedSize)
 }
