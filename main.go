@@ -169,11 +169,14 @@ OuterLoop:
 
 	// decode lzss
 	bufSizeBits := uint(10)
-	//bufSize := (1 << bufSizeBits)
-	//bufSizeMask := bufSize - 1
+	bufSize := uint64(1 << bufSizeBits)
+	bufSizeMask := bufSize - 1
 	lengthBits := uint(5)
-	//minLength := 3
-	//maxLength := (1 << lengthBits)
+	minLength := uint64(3)
+	maxLength := uint64(1 << lengthBits)
+
+	codeBuf := make([]byte, bufSize)
+	codePos := uint64(0)
 
 	decodedSize := uint64(0)
 	for decodedSize < orgSize {
@@ -190,7 +193,15 @@ OuterLoop:
 				panic(err)
 			}
 
-			fmt.Fprintf(fdec, "0: %c (%02x)\n", bits8, bits8)
+			byte1 := byte(bits8 & 0xff)
+			codeBuf[codePos] = byte1
+			codePos = (codePos + 1) & bufSizeMask
+
+			//fmt.Fprintf(fdec, "0: %c\t(%02x)\n", byte1, byte1)
+			_, err = fdec.Write([]byte{byte1})
+			if err != nil {
+				panic(err)
+			}
 			decodedSize++
 		} else {
 			// encoded data
@@ -204,7 +215,24 @@ OuterLoop:
 			}
 			len++
 
-			fmt.Fprintf(fdec, "1: idx=%d, len=%d\n", idx, len)
+			if len < minLength || maxLength < len {
+				panic(fmt.Errorf("too long code"))
+			}
+
+			i := ((bufSize - 1) - idx + codePos) & bufSizeMask
+			for l := len; l > 0; l-- {
+				byte1 := codeBuf[i]
+				codeBuf[codePos] = byte1
+				codePos = (codePos + 1) & bufSizeMask
+
+				//fmt.Fprintf(fdec, "1: %c\t(%02x),\tidx=%d,\ti=%d\n", byte1, byte1, idx, i)
+				_, err = fdec.Write([]byte{byte1})
+				if err != nil {
+					panic(err)
+				}
+
+				i = (i + 1) & bufSizeMask
+			}
 			decodedSize += len
 		}
 	}
