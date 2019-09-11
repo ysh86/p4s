@@ -10,10 +10,8 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 
-	"private/p4s/pkg/lbits"
 	"private/p4s/pkg/lzss"
 	"private/p4s/pkg/steganography"
 )
@@ -70,94 +68,25 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	bitreader, err := lbits.New(flzss, header.Xor8Bits())
+	err = lzss.Decode(fdec, flzss, header)
 	if err != nil {
 		panic(err)
 	}
 
-	// decode lzss
-	bufSizeBits := uint(10)
-	bufSize := uint64(1 << bufSizeBits)
-	bufSizeMask := bufSize - 1
-	lengthBits := uint(5)
-	minLength := uint64(3)
-	maxLength := uint64(1 << lengthBits)
-
-	codeBuf := make([]byte, bufSize)
-	codePos := uint64(0)
-
-	decodedSize := uint64(0)
-	for decodedSize < uint64(header.OrgSize) {
-		// flag
-		flag, err := bitreader.Read(1)
-		if err != nil {
-			panic(err)
-		}
-
-		if flag == 0 {
-			// 8bit data
-			bits8, err := bitreader.Read(8)
-			if err != nil {
-				panic(err)
-			}
-
-			byte1 := byte(bits8 & 0xff)
-			codeBuf[codePos] = byte1
-			codePos = (codePos + 1) & bufSizeMask
-
-			//fmt.Fprintf(fdec, "0: %c\t(%02x)\n", byte1, byte1)
-			_, err = fdec.Write([]byte{byte1})
-			if err != nil {
-				panic(err)
-			}
-			decodedSize++
-		} else {
-			// encoded data
-			idx, err := bitreader.Read(bufSizeBits)
-			if err != nil {
-				panic(err)
-			}
-			len, err := bitreader.Read(lengthBits)
-			if err != nil {
-				panic(err)
-			}
-			len++
-
-			if len < minLength || maxLength < len {
-				panic(fmt.Errorf("too long code"))
-			}
-
-			i := ((bufSize - 1) - idx + codePos) & bufSizeMask
-			for l := len; l > 0; l-- {
-				byte1 := codeBuf[i]
-				codeBuf[codePos] = byte1
-				codePos = (codePos + 1) & bufSizeMask
-
-				//fmt.Fprintf(fdec, "1: %c\t(%02x),\tidx=%d,\ti=%d\n", byte1, byte1, idx, i)
-				_, err = fdec.Write([]byte{byte1})
-				if err != nil {
-					panic(err)
-				}
-
-				i = (i + 1) & bufSizeMask
-			}
-			decodedSize += len
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", header.OrgSize, decodedSize)
-
+	///////////////////////////////////////////////
 	// CRC16
-	err = fdec.Sync()
-	if err != nil {
-		panic(err)
-	}
-	_, err = fdec.Seek(0, io.SeekStart)
+	///////////////////////////////////////////////
+	fdec, err = os.Open(os.Args[3])
 	if err != nil {
 		panic(err)
 	}
 	defer fdec.Close()
+
+	info, err = fdec.Stat()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", header.OrgSize, info.Size())
 
 	crc16decoded := uint16(0xffff)
 	for {

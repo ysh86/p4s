@@ -2,7 +2,10 @@ package lzss
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
+
+	"private/p4s/pkg/lbits"
 )
 
 // Header is the header of lzss file.
@@ -82,4 +85,85 @@ func ParseHeader(flzss io.Reader) (header *Header, err error) {
 // Xor8Bits gets xor mask from header
 func (h *Header) Xor8Bits() uint8 {
 	return uint8((h.flags >> 16) & 0xff)
+}
+
+// Decode decompresses lzss
+func Decode(fdst io.WriteCloser, fsrc io.Reader, header *Header) error {
+	defer fdst.Close()
+
+	bitreader, err := lbits.New(fsrc, header.Xor8Bits())
+	if err != nil {
+		return err
+	}
+
+	bufSizeBits := uint(10)
+	bufSize := uint64(1 << bufSizeBits)
+	bufSizeMask := bufSize - 1
+	lengthBits := uint(5)
+	minLength := uint64(3)
+	maxLength := uint64(1 << lengthBits)
+
+	codeBuf := make([]byte, bufSize)
+	codePos := uint64(0)
+
+	decodedSize := uint64(0)
+	for decodedSize < uint64(header.OrgSize) {
+		// flag
+		flag, err := bitreader.Read(1)
+		if err != nil {
+			return err
+		}
+
+		if flag == 0 {
+			// 8bit data
+			bits8, err := bitreader.Read(8)
+			if err != nil {
+				return err
+			}
+
+			byte1 := byte(bits8 & 0xff)
+			codeBuf[codePos] = byte1
+			codePos = (codePos + 1) & bufSizeMask
+
+			//fmt.Fprintf(fdst, "0: %c\t(%02x)\n", byte1, byte1)
+			_, err = fdst.Write([]byte{byte1})
+			if err != nil {
+				return err
+			}
+			decodedSize++
+		} else {
+			// encoded data
+			idx, err := bitreader.Read(bufSizeBits)
+			if err != nil {
+				return err
+			}
+			len, err := bitreader.Read(lengthBits)
+			if err != nil {
+				return err
+			}
+			len++
+
+			if len < minLength || maxLength < len {
+				return fmt.Errorf("too long code")
+			}
+
+			i := ((bufSize - 1) - idx + codePos) & bufSizeMask
+			for l := len; l > 0; l-- {
+				byte1 := codeBuf[i]
+				codeBuf[codePos] = byte1
+				codePos = (codePos + 1) & bufSizeMask
+
+				//fmt.Fprintf(fdst, "1: %c\t(%02x),\tidx=%d,\ti=%d\n", byte1, byte1, idx, i)
+				_, err = fdst.Write([]byte{byte1})
+				if err != nil {
+					return err
+				}
+
+				i = (i + 1) & bufSizeMask
+			}
+			decodedSize += len
+		}
+	}
+
+	return nil
 }

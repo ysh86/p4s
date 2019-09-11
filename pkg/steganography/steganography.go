@@ -30,9 +30,10 @@ func level7(pix uint8) uint64 {
 
 // Decode decodes data embedded into Y plane(steganography).
 func Decode(fdst io.WriteCloser, fsrc io.Reader, w, h int) (err error) {
+	defer fdst.Close()
+
 	// validate
 	if w*h%(5*4) != 0 {
-		fdst.Close()
 		return fmt.Errorf("w*h %% (5*4) must be 0")
 	}
 
@@ -82,6 +83,5 @@ OuterLoop:
 		}
 	}
 
-	fdst.Close()
 	return err
 }
