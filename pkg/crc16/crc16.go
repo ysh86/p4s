@@ -7,7 +7,7 @@ func Calc(fsrc io.Reader) (crc16 uint16, err error) {
 	b := [1]byte{}
 	crc16 = 0xffff
 	for {
-		_, err = fsrc.Read(b[:])
+		_, err = io.ReadFull(fsrc, b[:])
 		if err != nil {
 			break
 		}

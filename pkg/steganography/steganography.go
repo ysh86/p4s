@@ -44,7 +44,7 @@ func Decode(fdst io.WriteCloser, fsrc io.Reader, w, h int) (err error) {
 	payloadSize := uint64(0)
 OuterLoop:
 	for i := 0; i < w*h/5/4; i++ {
-		_, err = fsrc.Read(b[:])
+		_, err = io.ReadFull(fsrc, b[:])
 		if err == io.EOF {
 			break
 		}

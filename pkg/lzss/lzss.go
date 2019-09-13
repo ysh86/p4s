@@ -46,7 +46,7 @@ func ParseHeader(flzss io.Reader) (header *Header, err error) {
 	}
 
 	var name [4 * 9]byte
-	if _, err = flzss.Read(name[:]); err != nil {
+	if _, err = io.ReadFull(flzss, name[:]); err != nil {
 		return nil, err
 	}
 
@@ -88,8 +88,9 @@ func (h *Header) Xor8Bits() uint8 {
 }
 
 // Decode decompresses lzss
-func Decode(fdst io.WriteCloser, fsrc io.Reader, header *Header) error {
+func Decode(fdst, fcrc io.WriteCloser, fsrc io.Reader, header *Header) error {
 	defer fdst.Close()
+	defer fcrc.Close()
 
 	bitreader, err := lbits.New(fsrc, header.Xor8Bits())
 	if err != nil {
@@ -130,6 +131,10 @@ func Decode(fdst io.WriteCloser, fsrc io.Reader, header *Header) error {
 			if err != nil {
 				return err
 			}
+			_, err = fcrc.Write([]byte{byte1})
+			if err != nil {
+				return err
+			}
 			decodedSize++
 		} else {
 			// encoded data
@@ -155,6 +160,10 @@ func Decode(fdst io.WriteCloser, fsrc io.Reader, header *Header) error {
 
 				//fmt.Fprintf(fdst, "1: %c\t(%02x),\tidx=%d,\ti=%d\n", byte1, byte1, idx, i)
 				_, err = fdst.Write([]byte{byte1})
+				if err != nil {
+					return err
+				}
+				_, err = fcrc.Write([]byte{byte1})
 				if err != nil {
 					return err
 				}

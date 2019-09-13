@@ -22,7 +22,7 @@ func New(file io.Reader, xor8 uint8) (*LBits, error) {
 func (l *LBits) fill() error {
 	for l.bits64Len <= 56 {
 		bits8 := [1]byte{}
-		_, err := l.file.Read(bits8[:])
+		_, err := io.ReadFull(l.file, bits8[:])
 		if err != nil {
 			return err
 		}

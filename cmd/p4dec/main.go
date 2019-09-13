@@ -25,74 +25,45 @@ func main() {
 	}
 	defer fsrc.Close()
 
+	rlzss, wlzss := io.Pipe()
+	defer rlzss.Close()
+
 	///////////////////////////////////////////////
 	// steganography: data is embedded into Y plane
 	///////////////////////////////////////////////
 	w := 720
 	h := 720
-	flzss, err := os.Create(os.Args[2])
-	if err != nil {
-		panic(err)
-	}
-	err = steganography.Decode(flzss, fsrc, w, h)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Fprintf(os.Stderr, "done read from Y plane\n")
+	go steganography.Decode(wlzss, fsrc, w, h)
 
 	///////////////////////////////////////////////
 	// decompress lzss
 	///////////////////////////////////////////////
-	flzss, err = os.Open(os.Args[2])
-	if err != nil {
-		panic(err)
-	}
-	defer flzss.Close()
-
-	info, err := flzss.Stat()
-	if err != nil {
-		panic(err)
-	}
-
 	// read lzss header
-	header, err := lzss.ParseHeader(flzss)
+	header, err := lzss.ParseHeader(rlzss)
 	if err != nil {
 		panic(err)
 	}
-	if int64(lzss.HeaderSize)+int64(header.PayloadSize) != info.Size() {
-		panic(fmt.Errorf("invalid size of lzss file"))
-	}
-	fmt.Fprintf(os.Stderr, "done parse header: header=%d, payload=%d, total=%d\n", lzss.HeaderSize, header.PayloadSize, info.Size())
+	fmt.Fprintf(os.Stderr, "done read header: header=%d, payload=%d\n", lzss.HeaderSize, header.PayloadSize)
 	//fmt.Fprintf(os.Stderr, "%#v\n", header)
 
 	// decode lzss
-	fdec, err := os.Create(os.Args[3])
+	fdec, err := os.Create(os.Args[2])
 	if err != nil {
 		panic(err)
 	}
-	err = lzss.Decode(fdec, flzss, header)
-	if err != nil {
-		panic(err)
-	}
+
+	rcrc, wcrc := io.Pipe()
+	defer rcrc.Close()
+
+	go lzss.Decode(fdec, wcrc, rlzss, header)
 
 	///////////////////////////////////////////////
 	// CRC16
 	///////////////////////////////////////////////
-	fdec, err = os.Open(os.Args[3])
-	if err != nil {
-		panic(err)
-	}
-	defer fdec.Close()
-
-	info, err = fdec.Stat()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", header.OrgSize, info.Size())
-
-	crc16decoded, err := crc16.Calc(fdec)
+	crc16decoded, err := crc16.Calc(rcrc)
 	if err != io.EOF {
 		panic(err)
 	}
+	fmt.Fprintf(os.Stderr, "done dec: size=%d\n", header.OrgSize)
 	fmt.Fprintf(os.Stderr, "done crc16: org=%04x, decoded=%04x\n", header.CRC16, crc16decoded)
 }
