@@ -10,8 +10,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
+	"private/p4s/pkg/crc16"
 	"private/p4s/pkg/lzss"
 	"private/p4s/pkg/steganography"
 )
@@ -88,27 +90,9 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "done dec: size=%d, decoded=%d\n", header.OrgSize, info.Size())
 
-	crc16decoded := uint16(0xffff)
-	for {
-		b := [1]byte{}
-		_, err = fdec.Read(b[:])
-		if err != nil {
-			break
-		}
-
-		// calc
-		b8 := uint16(b[0])
-		temp := (crc16decoded ^ b8) & 0xff
-		for i := 0; i < 8; i++ {
-			if temp&1 == 1 {
-				temp = 0xc7ed ^ (temp >> 1)
-			} else {
-				temp >>= 1
-			}
-		}
-		crc16decoded = temp ^ (crc16decoded >> 8)
+	crc16decoded, err := crc16.Calc(fdec)
+	if err != io.EOF {
+		panic(err)
 	}
-	crc16decoded ^= 0xffff
-
 	fmt.Fprintf(os.Stderr, "done crc16: org=%04x, decoded=%04x\n", header.CRC16, crc16decoded)
 }
