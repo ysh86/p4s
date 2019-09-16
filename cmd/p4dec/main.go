@@ -13,9 +13,9 @@ import (
 	"io"
 	"os"
 
-	"private/p4s/pkg/crc16"
-	"private/p4s/pkg/lzss"
-	"private/p4s/pkg/steganography"
+	"github.com/ysh86/p4s/pkg/crc16"
+	"github.com/ysh86/p4s/pkg/lzss"
+	"github.com/ysh86/p4s/pkg/steganography"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"private/p4s/pkg/lbits"
+	"github.com/ysh86/p4s/pkg/lbits"
 )
 
 // Header is the header of lzss file.

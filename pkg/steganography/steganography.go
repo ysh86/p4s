@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"private/p4s/pkg/lzss"
+	"github.com/ysh86/p4s/pkg/lzss"
 )
 
 func level7(pix uint8) uint64 {
